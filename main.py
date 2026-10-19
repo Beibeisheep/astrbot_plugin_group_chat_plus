@@ -7767,7 +7767,7 @@ class ChatPlus(Star):
         # 这里不再提前把工具列表注入到 prompt 文本中，避免与实际可调用工具不一致。
 
         # 🆕 v1.0.2: 更新情绪状态（如果启用），情绪提示改为在 on_llm_request 中
-        # 追加到 system_prompt，不再注入 user prompt。
+        # 后置到 extra_user_content_parts（缓存友好），不再写入 system_prompt。
         if self.mood_enabled and self.mood_tracker:
             if self.debug_mode:
                 logger.info("【步骤12.5】更新情绪状态")
@@ -11067,13 +11067,44 @@ class ChatPlus(Star):
             except Exception as e:
                 logger.warning(f"⚠️ 生成工具提醒失败（将跳过提醒，不影响主流程）: {e}")
 
-        # P2: 情绪提示追加到 system_prompt 末尾（由 _generate_and_send_reply /
-        # proactive_chat_manager 预先存入 event extra，此处统一处理）。
+        # P2: 情绪提示后置到用户消息末尾（extra_user_content_parts + temp），
+        # 不再写 system_prompt——情绪每轮变化会打断 DeepSeek 前缀缓存。
+        # 对齐 cb-agent context-update / AstrBot 官方推荐注入方式。
+        # 顺带清掉历史路径可能残留在 system 里的情绪行，稳住前缀。
+        try:
+            import re as _re_mood
+
+            _sp = str(getattr(req, "system_prompt", "") or "")
+            _cleaned = _re_mood.sub(
+                r"\n*\n?\[系统信息-情绪参考:[^\]]*\]", "", _sp
+            ).strip()
+            if _cleaned != _sp.strip():
+                req.system_prompt = _cleaned
+        except Exception:
+            pass
         mood_hint = event.get_extra("_group_chat_plus_mood_hint", None)
         if mood_hint:
-            req.system_prompt += f"\n\n{mood_hint}"
-            if self.debug_mode:
-                logger.info(f"  ✅ 已追加情绪提示到 system_prompt")
+            injected = False
+            try:
+                from astrbot.core.agent.message import TextPart
+
+                parts = getattr(req, "extra_user_content_parts", None)
+                if parts is None:
+                    req.extra_user_content_parts = []
+                    parts = req.extra_user_content_parts
+                if isinstance(parts, list):
+                    wrapped = (
+                        "<context-update source=\"group_chat_plus_mood\">\n"
+                        f"{mood_hint}\n"
+                        "</context-update>"
+                    )
+                    parts.append(TextPart(text=wrapped).mark_as_temp())
+                    injected = True
+            except Exception as e:
+                logger.warning(f"⚠️ 情绪提示后置注入失败，将跳过: {e}")
+            if injected and self.debug_mode:
+                logger.info("  ✅ 已追加情绪提示到 extra_user_content_parts（缓存友好）")
+            event.set_extra("_group_chat_plus_mood_hint", None)
 
         if self.debug_mode:
             logger.info("  ✅ 已恢复插件自定义上下文:")

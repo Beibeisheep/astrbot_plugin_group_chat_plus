@@ -346,7 +346,8 @@ class MessageProcessor:
                     if is_empty_at:
                         system_notice = (
                             f"[系统提示]{sender_info_text} 单独@了你，没有附带任何消息内容。"
-                            f"自然回应就好。"
+                            f"自然回应就好；禁止调用点歌/播放/查歌词工具，"
+                            f"也不要根据历史上下文重新点歌。"
                         )
                     else:
                         system_notice = (
@@ -543,7 +544,8 @@ class MessageProcessor:
                     if is_empty_at:
                         system_notice = (
                             f"[系统提示]{sender_info_text} 单独@了你，没有附带任何消息内容，"
-                            f"可能只是叫你出来，也可能是有事想说——自然回应就好。"
+                            f"可能只是叫你出来，也可能是有事想说——自然回应就好；"
+                            f"禁止调用点歌/播放/查歌词工具，也不要根据历史上下文重新点歌。"
                         )
                     else:
                         system_notice = (
